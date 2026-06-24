@@ -10,7 +10,8 @@
       "memory-embed.test.js",
       "memory-suggest.test.js",
       "memory-guard.test.js",
-      "memory-reindex.test.js"
+      "memory-reindex.test.js",
+      "bootstrap.test.js"
     ]
   },
   "coverageAnalysis": "off",
@@ -24,7 +25,8 @@
     "memory-embed.js",
     "memory-suggest.js",
     "memory-guard.js",
-    "memory-reindex.js"
+    "memory-reindex.js",
+    "bootstrap.js"
   ],
   "incremental": true,
   "_cliquet": "break monte jamais descend (doctrine Théo). Score 2026-06-20 = 89.25% (6 noyaux purs : state 95.65, probe 100, suggest 100, bump 87.88, embed 86.73, inject 85.29). Fixé 88 (marge ~1pt). Config déclarative (chemins/URL/préfixes) exclue via // Stryker disable.",

@@ -28,7 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { embedText, searchDedup, dimMismatch } = require('./memory-embed.js');
+const { embedText, searchDedup, dimMismatch, MODEL } = require('./memory-embed.js');
 const STATE = require('./memory-state.js');
 const PATHS = require('./paths.js');
 
@@ -36,10 +36,10 @@ const PATHS = require('./paths.js');
 //   aucun contrat comportemental à muter (cf doctrine discord-mcp).
 const K = 5;                  // candidats considérés par match
 const RECALL_MAX = 3;         // rappels affichés max
-const MIN_SCORE = 0.55;       // seuil de match — calibré Qwen3-Embedding-4B (2026-06-24).
-                              // Bande Qwen3 +0.25 vs EmbeddingGemma : bruit hors-sujet
-                              // plafonne ~0.50, vrais positifs ≥0.66, related ≥0.60.
-                              // ⚠️ COUPLÉ au modèle : tout swap d'embedding = recalibrer.
+// seuil de match — COUPLÉ au modèle, vient du profil actif (profiles.js) :
+//   GPU/Qwen3 = 0.55 (bruit hors-sujet ~0.50, vrais positifs ≥0.66) ;
+//   CPU/Gemma = 0.40. Fallback 0.55 si profil illisible.
+const MIN_SCORE = (MODEL && typeof MODEL.minScore === 'number') ? MODEL.minScore : 0.55;
 const INJECT_MAX_CHARS = 3000; // corps injecté tronqué au-delà (anti-bloat)
 const TIMEOUT_MS = 2500;
 const INDEX = PATHS.indexPath();

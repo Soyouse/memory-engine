@@ -40,15 +40,21 @@ const EMBED_URL = process.env.MEM_EMBED_URL || 'http://127.0.0.1:8181/v1/embeddi
 //   - apiName : champ "model" envoyé à llama-server (API OpenAI ; ignoré côté
 //       serveur mono-modèle, mais requis non-vide).
 //   `name` DOIT matcher `model` écrit dans l'index par memory-reindex.js.
-// ⚠️ Qwen3-Embedding EXIGE AUSSI `--pooling last` au serveur (cf start-llama.ps1) :
+// ⚠️ Qwen3-Embedding EXIGE AUSSI `--pooling last` au serveur (cf bootstrap.js) :
 //   pooling mean (défaut Gemma) → embeddings FAUX silencieusement. NE PAS retirer.
-const MODEL = {
-  name: 'Qwen3-Embedding-4B-Q8_0',
-  apiName: 'qwen3-embedding',
-  dim: 2560,
-  queryPrefix: 'Instruct: Given a message from a user to their AI assistant, retrieve relevant long-term memories (user preferences, feedback, identity, and project facts).\nQuery: ',
-  docPrefix: '',
-};
+// DATA-DRIVEN : le profil ACTIF est choisi par bootstrap.js (GPU/CPU) et écrit
+//   dans profile.json. On le lit ici ; fallback = profil GPU (Qwen3). Les profils
+//   canoniques vivent dans profiles.js (source unique des paires modèle).
+const { PROFILES } = require('./profiles.js');
+const PATHS = require('./paths.js');
+function loadModel() {
+  try {
+    const p = JSON.parse(require('fs').readFileSync(PATHS.profilePath(), 'utf8'));
+    if (p && p.name && p.dim) return p;
+  } catch { /* pas encore de profil → défaut */ }
+  return PROFILES.gpu;
+}
+const MODEL = loadModel();
 const QUERY_PREFIX = MODEL.queryPrefix; // alias rétro-compat
 const DOC_PREFIX = MODEL.docPrefix;
 // Stryker restore all

@@ -26,6 +26,11 @@ const indexPath = () => process.env.MEM_INDEX || path.join(dataDir(), 'embedding
 const healthPath = () => process.env.MEM_HEALTH || path.join(dataDir(), 'mem-health.json');
 const stateDir = () => process.env.MEM_STATE_DIR || path.join(dataDir(), 'state');
 const memoryDir = () => process.env.MEMORY_DIR || path.join(dataDir(), 'memory');
+// Runtime du moteur d'inférence (bootstrap) — binaire, modèles, profil actif, log.
+const profilePath = () => path.join(dataDir(), 'profile.json');
+const binDir = () => path.join(dataDir(), 'bin');
+const modelsDir = () => path.join(dataDir(), 'models');
+const serverLog = () => path.join(dataDir(), 'server.log');
 
-module.exports = { dataDir, indexPath, healthPath, stateDir, memoryDir };
+module.exports = { dataDir, indexPath, healthPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog };
 // Stryker restore all
