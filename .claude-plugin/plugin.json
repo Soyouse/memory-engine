@@ -1,0 +1,26 @@
+{
+  "name": "memory-engine",
+  "displayName": "Memory Engine",
+  "version": "0.1.0",
+  "description": "Mémoire long terme sémantique 100% locale pour Claude Code : recall compaction-aware, embeddings GPU (llama.cpp) avec fallback CPU. Aucun cloud, aucune donnée envoyée.",
+  "author": { "name": "Soyouse" },
+  "license": "Apache-2.0",
+  "keywords": ["memory", "semantic", "embeddings", "rag", "llama.cpp", "local", "compaction"],
+  "defaultEnabled": false,
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills/",
+  "userConfig": {
+    "gpu": {
+      "type": "boolean",
+      "title": "Accélération GPU",
+      "description": "true = embeddings sur GPU (Vulkan/Metal/CUDA) avec Qwen3-Embedding-4B (meilleure qualité). false = fallback CPU avec EmbeddingGemma-300M (léger, marche partout). Auto-détecté si non défini.",
+      "default": true
+    },
+    "minScore": {
+      "type": "string",
+      "title": "Seuil de match (cosine)",
+      "description": "Score minimal pour qu'une mémoire soit rappelée. Couplé au modèle (0.55 pour Qwen3-4B GPU). Laisser vide = défaut du profil modèle.",
+      "required": false
+    }
+  }
+}

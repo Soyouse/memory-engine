@@ -1,0 +1,14 @@
+# Données runtime (générées, jamais versionnées) — vont dans ${CLAUDE_PLUGIN_DATA}
+*.gguf
+embeddings.json
+mem-health.json
+server.log
+server.out
+state/
+models/
+
+# Node / tests / mutation
+node_modules/
+reports/
+.stryker-tmp/
+*.log

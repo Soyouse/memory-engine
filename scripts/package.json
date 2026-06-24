@@ -1,0 +1,15 @@
+{
+  "name": "claude-hooks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hooks Claude Code de Théo (système mémoire v2 + protections). Tests node:test, mutation Stryker sur les noyaux purs.",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "test:mutation": "stryker run"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/tap-runner": "^8.7.1"
+  }
+}
