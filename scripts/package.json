@@ -1,11 +1,15 @@
 {
-  "name": "claude-hooks",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Hooks Claude Code de Théo (système mémoire v2 + protections). Tests node:test, mutation Stryker sur les noyaux purs.",
+  "name": "memory-engine",
+  "version": "0.1.0",
+  "description": "Mémoire long terme sémantique 100% locale pour Claude Code (embeddings llama.cpp GPU/CPU, compaction-aware). Tests node:test, mutation Stryker sur les noyaux purs.",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Soyouse/memory-engine.git" },
+  "keywords": ["claude-code", "plugin", "memory", "semantic", "embeddings", "llama.cpp", "local", "rag"],
+  "engines": { "node": ">=18" },
   "scripts": {
     "test": "node --test",
     "test:watch": "node --test --watch",
+    "mutation": "stryker run",
     "test:mutation": "stryker run"
   },
   "devDependencies": {

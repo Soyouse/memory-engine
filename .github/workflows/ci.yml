@@ -1,0 +1,68 @@
+name: CI
+
+# Repo OSS PUBLIC → minutes GitHub Actions ILLIMITÉES : la matrice multi-OS est
+# légitime ici (elle serait bannie en repo privé, cf doctrine quota). Tests 100%
+# OFFLINE : aucun serveur llama.cpp requis (les tests couvrent les noyaux PURS +
+# coquilles I/O via dossiers temp ; embedText/llama-server ne tournent jamais en CI).
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['**.md']
+  pull_request:
+    branches: [master]
+    paths-ignore: ['**.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # CŒUR : prouve que tout le JS s'exécute sur les 3 OS (détection OS/arch, chemins
+  # os.homedir, path.join, sélection d'asset). C'est LA validation cross-OS qu'on ne
+  # peut pas faire en local (une seule machine Windows).
+  test:
+    name: Tests · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  # Gate mutation : logique PURE, OS-agnostique → ubuntu seul (pas de gaspillage matrice).
+  # Incrémental + cache → ne re-mute que le diff (~secondes). break=88 (cliquet, monte jamais).
+  # AUCUN `needs:` (parallélisme total : wall = job le plus long, pas la somme).
+  mutation:
+    name: Gate mutation (Stryker, break=88)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: scripts/reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: stryker-incremental-
+      - run: npm ci
+      - run: npm run mutation

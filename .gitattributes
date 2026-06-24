@@ -1,0 +1,8 @@
+# Normalisation des fins de ligne (cross-OS) : LF partout dans le repo.
+# Sans ça, un checkout Windows réécrit en CRLF → diffs parasites + scripts shell cassés.
+* text=auto eol=lf
+
+# Binaires : jamais de conversion.
+*.gguf binary
+*.zip binary
+*.tar.gz binary

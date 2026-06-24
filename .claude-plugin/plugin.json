@@ -8,7 +8,6 @@
   "keywords": ["memory", "semantic", "embeddings", "rag", "llama.cpp", "local", "compaction"],
   "defaultEnabled": false,
   "hooks": "./hooks/hooks.json",
-  "skills": "./skills/",
   "userConfig": {
     "gpu": {
       "type": "boolean",
