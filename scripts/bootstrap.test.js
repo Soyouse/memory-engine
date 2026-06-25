@@ -66,6 +66,16 @@ test('serverArgs : CPU (pooling null) = pas de flag --pooling, -ngl 0', () => {
   assert.equal(a[a.indexOf('-ngl') + 1], '0');
 });
 
+test('serverArgs : idleSeconds > 0 ajoute --sleep-idle-seconds (GPU rendu à l\'idle)', () => {
+  const a = serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', 1200);
+  assert.equal(a[a.indexOf('--sleep-idle-seconds') + 1], '1200');
+});
+
+test('serverArgs : idleSeconds absent/0 = PAS de flag sleep (serveur toujours chaud)', () => {
+  assert.ok(!serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181').includes('--sleep-idle-seconds'));
+  assert.ok(!serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', 0).includes('--sleep-idle-seconds'));
+});
+
 test('serverExeName : .exe sur Windows seulement', () => {
   assert.equal(serverExeName('win32'), 'llama-server.exe');
   assert.equal(serverExeName('darwin'), 'llama-server');

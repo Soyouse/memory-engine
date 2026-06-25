@@ -1,7 +1,7 @@
 {
   "name": "memory-engine",
   "displayName": "Memory Engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Mémoire long terme sémantique 100% locale pour Claude Code : recall compaction-aware, embeddings GPU (llama.cpp) avec fallback CPU. Aucun cloud, aucune donnée envoyée.",
   "author": { "name": "Soyouse" },
   "license": "Apache-2.0",

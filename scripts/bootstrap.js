@@ -22,13 +22,14 @@
 const fs = require('fs');
 const path = require('path');
 const PATHS = require('./paths.js');
-const lease = require('./lease.js');
 const { PROFILES } = require('./profiles.js');
 
 // Stryker disable all : config déclarative.
 const HOST = process.env.MEM_EMBED_HOST || '127.0.0.1';
 const PORT = process.env.MEM_EMBED_PORT || '8181';
 const GH_LATEST = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';
+// Secondes d'inactivité après lesquelles llama.cpp DÉCHARGE le modèle (GPU libéré).
+const IDLE_SECONDS = Number(process.env.MEMORY_ENGINE_IDLE_SECONDS) || 1200; // 20 min
 // Stryker restore all
 
 // ── NOYAU PUR (mutable Stryker) ──
@@ -59,11 +60,16 @@ function pickAsset(assets, platform, arch, useGpu) {
 }
 
 // Flags de lancement du serveur (pooling COUPLÉ au profil : Qwen3=last).
-function serverArgs(profile, modelPath, host, port) {
+//   --sleep-idle-seconds : NATIF llama.cpp. Le serveur décharge le modèle de la
+//   VRAM après N s sans requête (GPU rendu au gaming) et le RECHARGE seul à la
+//   requête suivante. Remplace tout lifecycle custom (lease/watchdog/SessionEnd) :
+//   chaque embedding = signal d'activité, le serveur tient son propre timer idle.
+function serverArgs(profile, modelPath, host, port, idleSeconds) {
   const a = ['-m', modelPath, '--embeddings', '-ngl', String(profile.ngl),
     '--host', String(host), '--port', String(port),
     '--ctx-size', '2048', '--batch-size', '2048', '--ubatch-size', '2048'];
   if (profile.pooling) a.push('--pooling', profile.pooling);
+  if (idleSeconds > 0) a.push('--sleep-idle-seconds', String(idleSeconds));
   return a;
 }
 
@@ -135,28 +141,10 @@ function extractZip(zip, destDir) {
 }
 
 function launchDaemon(exe, profile, modelPath) {
-  const args = serverArgs(profile, modelPath, HOST, PORT);
+  const args = serverArgs(profile, modelPath, HOST, PORT, IDLE_SECONDS);
   const out = fs.openSync(PATHS.serverLog(), 'a');
   const child = spawn(exe, args, { detached: true, stdio: ['ignore', out, out] });
-  // pid écrit AVANT unref : le watchdog en a besoin pour tuer le daemon à l'idle.
-  try { fs.writeFileSync(PATHS.serverPid(), String(child.pid)); } catch { /* ignore */ }
   child.unref();
-}
-
-// Lance le watchdog idle-shutdown si aucun n'est déjà vivant (singleton via lock).
-//   Filet qui libère le GPU quand plus aucune session n'est active. NON-bloquant.
-function ensureWatchdog() {
-  try {
-    const raw = fs.readFileSync(PATHS.watchdogLock(), 'utf8');
-    const pid = parseInt(String(raw).trim(), 10);
-    if (Number.isInteger(pid) && pid > 0) {
-      try { process.kill(pid, 0); return; } catch (e) { if (e && e.code === 'EPERM') return; }
-    }
-  } catch { /* pas de lock → on lance */ }
-  try {
-    const wd = spawn(process.execPath, [path.join(__dirname, 'watchdog.js')], { detached: true, stdio: 'ignore' });
-    wd.unref();
-  } catch { /* fail-open */ }
 }
 
 function writeProfile(profile) {
@@ -201,7 +189,6 @@ async function fetchAndLaunch() {
   }
 
   launchDaemon(exe, profile, modelPath);
-  ensureWatchdog();
   log(`daemon lancé (profil ${profile.id}).`);
 
   // Anti-silence : si GPU attendu mais absent du log → AVERTIR (pas un échec).
@@ -240,32 +227,14 @@ async function main() {
   process.exit(0);
 }
 
-// SessionStart : pose le lease de la session + assure le watchdog, PUIS main().
-//   On lit le session_id sur stdin (fourni par Claude Code). Garde-fou : si
-//   'end' ne fire pas, un timer enclenche quand même (fail-open, jamais bloquer).
-function sessionStart() {
-  let raw = '';
-  let started = false;
-  const go = () => {
-    if (started) return;
-    started = true;
-    try { const p = JSON.parse(raw || '{}'); lease.touch(p && p.session_id); } catch { lease.touch('unknown'); }
-    ensureWatchdog();
-    Promise.resolve(main()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
-  };
-  try {
-    process.stdin.on('data', (c) => { raw += c; });
-    process.stdin.on('end', go);
-    process.stdin.on('error', go);
-  } catch { go(); }
-  setTimeout(go, 1500); // garde-fou : stdin muet → on avance quand même
-}
-
+// SessionStart : lance le daemon s'il est down (idempotent). Le serveur gère
+//   lui-même son cycle de vie GPU (--sleep-idle-seconds) → aucun lease ni
+//   watchdog à poser. main() ne lit pas stdin : on n'attend rien, on avance.
 if (require.main === module) {
   if (process.argv[2] === '--fetch') {
     Promise.resolve(fetchAndLaunch()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
   } else {
-    sessionStart();
+    Promise.resolve(main()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
   }
 }
 // Stryker restore all

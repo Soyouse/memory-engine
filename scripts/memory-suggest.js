@@ -31,7 +31,6 @@ const path = require('path');
 const { embedText, searchDedup, dimMismatch, MODEL } = require('./memory-embed.js');
 const STATE = require('./memory-state.js');
 const PATHS = require('./paths.js');
-const lease = require('./lease.js');
 
 // Stryker disable all : config déclarative (seuils de tuning + chemins) —
 //   aucun contrat comportemental à muter (cf doctrine discord-mcp).
@@ -143,8 +142,9 @@ async function probeServer() {
   } catch { return 'down'; }
 }
 
-// Réveil après idle-kill : relance le daemon en process détaché (idempotent,
-//   non-bloquant). bootstrap vérifie lui-même si le serveur est déjà up.
+// Résilience anti-crash : si le serveur est injoignable (vrai crash CRT — PAS
+//   un sleep idle, où le process reste vivant et /health répond), relance le
+//   daemon en process détaché (idempotent, non-bloquant). Remplace le keepalive.
 function relaunchDaemon() {
   try {
     const child = spawn(process.execPath, [path.join(__dirname, 'bootstrap.js'), '--fetch'],
@@ -166,8 +166,6 @@ if (require.main === module) {
       const payload = JSON.parse(raw || '{}');
       const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : '';
       const sessionId = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : 'unknown';
-      // Rafraîchit le lease : tant que tu prompts, le watchdog garde le GPU.
-      lease.touch(sessionId);
       if (!prompt) { process.exit(0); }
 
       const idx = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
