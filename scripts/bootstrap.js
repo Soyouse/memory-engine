@@ -28,11 +28,18 @@ const { PROFILES } = require('./profiles.js');
 const HOST = process.env.MEM_EMBED_HOST || '127.0.0.1';
 const PORT = process.env.MEM_EMBED_PORT || '8181';
 const GH_LATEST = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest';
-// Secondes d'inactivité après lesquelles llama.cpp DÉCHARGE le modèle (GPU libéré).
-const IDLE_SECONDS = Number(process.env.MEMORY_ENGINE_IDLE_SECONDS) || 1200; // 20 min
 // Stryker restore all
 
 // ── NOYAU PUR (mutable Stryker) ──
+
+// Secondes d'inactivité avant que llama.cpp décharge le modèle (GPU rendu au
+//   gaming). Défaut 1200 (20 min) ; override `MEMORY_ENGINE_IDLE_SECONDS` ; 0 =
+//   jamais (serveur toujours chaud). ⚠️ PUR + testé : garde anti-régression — si
+//   le défaut tombait à 0, le serveur tiendrait le GPU H24 (le bug qu'on a tué).
+function idleSeconds(env) {
+  const n = Number((env || {}).MEMORY_ENGINE_IDLE_SECONDS);
+  return Number.isFinite(n) && n >= 0 ? n : 1200;
+}
 
 // Choix du profil. userGpu explicite (true/false) gagne ; sinon auto = GPU
 // (Mac=Metal, Win/Linux=Vulkan). Pas de GPU réel → l'utilisateur met gpu:false
@@ -80,7 +87,7 @@ function gpuFoundInLog(text) {
   return /Vulkan\d|Metal|CUDA|ROCm|Radeon|GeForce|Apple M|Intel.*Graphics/i.test(String(text || ''));
 }
 
-module.exports = { detectProfileId, pickAsset, serverArgs, serverExeName, gpuFoundInLog };
+module.exports = { detectProfileId, pickAsset, serverArgs, serverExeName, gpuFoundInLog, idleSeconds };
 
 // ── COQUILLE I/O (exclue mutation) ──
 // Stryker disable all
@@ -141,7 +148,7 @@ function extractZip(zip, destDir) {
 }
 
 function launchDaemon(exe, profile, modelPath) {
-  const args = serverArgs(profile, modelPath, HOST, PORT, IDLE_SECONDS);
+  const args = serverArgs(profile, modelPath, HOST, PORT, idleSeconds(process.env));
   const out = fs.openSync(PATHS.serverLog(), 'a');
   const child = spawn(exe, args, { detached: true, stdio: ['ignore', out, out] });
   child.unref();

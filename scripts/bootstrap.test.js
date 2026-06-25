@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { detectProfileId, pickAsset, serverArgs, serverExeName, gpuFoundInLog } = require('./bootstrap.js');
+const { detectProfileId, pickAsset, serverArgs, serverExeName, gpuFoundInLog, idleSeconds } = require('./bootstrap.js');
 const { PROFILES } = require('./profiles.js');
 
 test('detectProfileId : explicite gagne', () => {
@@ -74,6 +74,25 @@ test('serverArgs : idleSeconds > 0 ajoute --sleep-idle-seconds (GPU rendu à l\'
 test('serverArgs : idleSeconds absent/0 = PAS de flag sleep (serveur toujours chaud)', () => {
   assert.ok(!serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181').includes('--sleep-idle-seconds'));
   assert.ok(!serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', 0).includes('--sleep-idle-seconds'));
+});
+
+test('idleSeconds : défaut = 1200 (env absent/vide/invalide)', () => {
+  assert.equal(idleSeconds({}), 1200);
+  assert.equal(idleSeconds(undefined), 1200);
+  assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: 'xx' }), 1200);
+});
+
+test('idleSeconds : override env respecté ; 0 = jamais', () => {
+  assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: '300' }), 300);
+  assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: '0' }), 0);
+});
+
+// ⚠️ GARDE ANTI-RÉGRESSION CLÉ : le défaut DOIT produire le flag --sleep-idle-seconds.
+//   Sinon le serveur tiendrait le GPU H24 (le bug qu'on a éliminé). Couvre le
+//   câblage défaut → flag (le maillon launchDaemon est cette même composition).
+test('REGRESSION : défaut idleSeconds → serveur lancé AVEC --sleep-idle-seconds', () => {
+  const a = serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', idleSeconds({}));
+  assert.equal(a[a.indexOf('--sleep-idle-seconds') + 1], '1200');
 });
 
 test('serverExeName : .exe sur Windows seulement', () => {
