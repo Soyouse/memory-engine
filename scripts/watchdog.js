@@ -91,9 +91,12 @@ if (require.main === module) {
     fs.mkdirSync(PATHS.dataDir(), { recursive: true });
     fs.writeFileSync(PATHS.watchdogLock(), String(process.pid));
   } catch { /* ignore */ }
-  const timer = setInterval(tick, POLL_MS);
-  if (timer.unref) timer.unref(); // ne maintient pas le process en vie à lui seul
-  // Garde le process vivant indépendamment du timer unref'd.
-  process.stdin.resume();
+  // ⚠️ Timer NON-unref'd VOLONTAIREMENT : c'est lui (et lui seul) qui maintient
+  //   l'event loop — donc le process — vivant entre deux ticks. Le unref'er +
+  //   stdin.resume() ne marche PAS : bootstrap lance ce watchdog détaché avec
+  //   stdio:'ignore', donc stdin émet 'end' aussitôt et ne garde rien → l'event
+  //   loop se vide et le watchdog meurt juste après avoir écrit son lock.
+  //   NE JAMAIS unref ce timer. Un daemon de poll DOIT rester ref'd.
+  setInterval(tick, POLL_MS);
 }
 // Stryker restore all
