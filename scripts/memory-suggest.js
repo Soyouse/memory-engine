@@ -31,6 +31,7 @@ const path = require('path');
 const { embedText, searchDedup, dimMismatch, MODEL } = require('./memory-embed.js');
 const STATE = require('./memory-state.js');
 const PATHS = require('./paths.js');
+const lease = require('./lease.js');
 
 // Stryker disable all : config déclarative (seuils de tuning + chemins) —
 //   aucun contrat comportemental à muter (cf doctrine discord-mcp).
@@ -88,10 +89,22 @@ function formatInjected(items) {
     + blocks.join('\n\n') + '\n</memory-inject>';
 }
 
-// Enregistrement de santé (lu par la statusline).
-function healthRecord(ok, latencyMs, model, isoNow, error) {
+// Statut TRI-ÉTAT (lu par la statusline) à partir du résultat d'embed + sonde
+//   /health du serveur : embed OK → 'ok' ; serveur joignable mais modèle en
+//   cours de chargement (HTTP 503) → 'booting' ; injoignable → 'down'.
+//   L'état 'booting' évite un faux « DOWN » alarmant pendant le démarrage.
+function statusFrom(embedOk, probe) {
+  if (embedOk) return 'ok';
+  if (probe === 'loading') return 'booting';
+  return 'down';
+}
+
+// Enregistrement de santé (lu par la statusline). `status` optionnel : sinon
+//   dérivé de `ok` (rétro-compat). `ok` reste booléen (lecteurs historiques).
+function healthRecord(ok, latencyMs, model, isoNow, error, status) {
   return {
     ok: !!ok,
+    status: status || (ok ? 'ok' : 'down'),
     latencyMs: Number.isFinite(latencyMs) ? Math.round(latencyMs) : null,
     model: model || null,
     ts: isoNow,
@@ -100,16 +113,44 @@ function healthRecord(ok, latencyMs, model, isoNow, error) {
 }
 
 module.exports = {
-  partitionByTier, formatRecall, formatInjected, healthRecord,
+  partitionByTier, formatRecall, formatInjected, healthRecord, statusFrom,
   K, RECALL_MAX, MIN_SCORE, INJECT_MAX_CHARS,
 };
 
 // ── COQUILLE I/O (exclue mutation) ──
 // Stryker disable all
+const { spawn } = require('child_process');
+const EMBED_HOST = process.env.MEM_EMBED_HOST || '127.0.0.1';
+const EMBED_PORT = process.env.MEM_EMBED_PORT || '8181';
+
 function readBody(id) {
   const raw = fs.readFileSync(path.join(MEM_DIR, id + '.md'), 'utf8');
   const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   return (m ? m[1] : raw).trim();
+}
+
+// Sonde /health pour distinguer 'booting' (503 modèle en cours) de 'down'
+//   (injoignable). llama-server répond 503 tant que le modèle charge.
+async function probeServer() {
+  try {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 1000);
+    const r = await fetch(`http://${EMBED_HOST}:${EMBED_PORT}/health`, { signal: c.signal });
+    clearTimeout(t);
+    if (r.ok) return 'ok';
+    if (r.status === 503) return 'loading';
+    return 'down';
+  } catch { return 'down'; }
+}
+
+// Réveil après idle-kill : relance le daemon en process détaché (idempotent,
+//   non-bloquant). bootstrap vérifie lui-même si le serveur est déjà up.
+function relaunchDaemon() {
+  try {
+    const child = spawn(process.execPath, [path.join(__dirname, 'bootstrap.js'), '--fetch'],
+      { detached: true, stdio: 'ignore' });
+    child.unref();
+  } catch { /* fail-open */ }
 }
 
 if (require.main === module) {
@@ -125,6 +166,8 @@ if (require.main === module) {
       const payload = JSON.parse(raw || '{}');
       const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : '';
       const sessionId = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : 'unknown';
+      // Rafraîchit le lease : tant que tu prompts, le watchdog garde le GPU.
+      lease.touch(sessionId);
       if (!prompt) { process.exit(0); }
 
       const idx = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
@@ -163,7 +206,14 @@ if (require.main === module) {
       const out = [formatInjected(injected), formatRecall(toRecall)].filter(Boolean).join('\n');
       if (out) process.stdout.write(out + '\n');
     } catch (e) {
-      writeHealth(healthRecord(false, null, null, new Date().toISOString(), e && e.message));
+      // Embed a échoué : sonde le serveur pour distinguer démarrage vs panne.
+      //   'booting' (modèle en cours) → statusline « démarrage », pas « DOWN ».
+      //   'down' (injoignable) → relance le daemon (réveil après idle-kill).
+      let probe = 'down';
+      try { probe = await probeServer(); } catch { /* down */ }
+      if (probe === 'down') relaunchDaemon();
+      const status = statusFrom(false, probe);
+      writeHealth(healthRecord(false, null, null, new Date().toISOString(), e && e.message, status));
     }
     process.exit(0);
   });

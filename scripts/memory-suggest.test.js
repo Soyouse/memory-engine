@@ -85,10 +85,33 @@ test('formatInjected — sous le cap : PAS de troncature', () => {
   assert.doesNotMatch(b, /tronqué/);
 });
 
+// ── statusFrom (pur) ──
+test('statusFrom — embed ok → ok (quel que soit le probe)', () => {
+  assert.strictEqual(S.statusFrom(true, 'down'), 'ok');
+  assert.strictEqual(S.statusFrom(true, 'loading'), 'ok');
+});
+test('statusFrom — embed ko + serveur en chargement → booting', () => {
+  assert.strictEqual(S.statusFrom(false, 'loading'), 'booting');
+});
+test('statusFrom — embed ko + injoignable/inconnu → down', () => {
+  assert.strictEqual(S.statusFrom(false, 'down'), 'down');
+  assert.strictEqual(S.statusFrom(false, null), 'down');
+  assert.strictEqual(S.statusFrom(false, 'ok'), 'down'); // ok+!embed incohérent → down prudent
+});
+
 // ── healthRecord (pur) ──
 test('healthRecord — ok complet', () => {
   assert.deepStrictEqual(S.healthRecord(true, 182.6, 'gemma', 'T', null),
-    { ok: true, latencyMs: 183, model: 'gemma', ts: 'T', error: null });
+    { ok: true, status: 'ok', latencyMs: 183, model: 'gemma', ts: 'T', error: null });
+});
+test('healthRecord — status explicite (booting) override le défaut', () => {
+  const r = S.healthRecord(false, null, 'm', 'T', null, 'booting');
+  assert.strictEqual(r.ok, false);       // ok reste booléen (rétro-compat)
+  assert.strictEqual(r.status, 'booting');
+});
+test('healthRecord — sans status explicite → dérivé de ok', () => {
+  assert.strictEqual(S.healthRecord(true, 5, 'm', 'T').status, 'ok');
+  assert.strictEqual(S.healthRecord(false, 5, 'm', 'T').status, 'down');
 });
 test('healthRecord — down + erreur tronquée 200', () => {
   const r = S.healthRecord(false, null, null, 'T', 'x'.repeat(500));

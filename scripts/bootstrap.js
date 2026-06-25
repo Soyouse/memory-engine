@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const PATHS = require('./paths.js');
+const lease = require('./lease.js');
 const { PROFILES } = require('./profiles.js');
 
 // Stryker disable all : config déclarative.
@@ -137,7 +138,25 @@ function launchDaemon(exe, profile, modelPath) {
   const args = serverArgs(profile, modelPath, HOST, PORT);
   const out = fs.openSync(PATHS.serverLog(), 'a');
   const child = spawn(exe, args, { detached: true, stdio: ['ignore', out, out] });
+  // pid écrit AVANT unref : le watchdog en a besoin pour tuer le daemon à l'idle.
+  try { fs.writeFileSync(PATHS.serverPid(), String(child.pid)); } catch { /* ignore */ }
   child.unref();
+}
+
+// Lance le watchdog idle-shutdown si aucun n'est déjà vivant (singleton via lock).
+//   Filet qui libère le GPU quand plus aucune session n'est active. NON-bloquant.
+function ensureWatchdog() {
+  try {
+    const raw = fs.readFileSync(PATHS.watchdogLock(), 'utf8');
+    const pid = parseInt(String(raw).trim(), 10);
+    if (Number.isInteger(pid) && pid > 0) {
+      try { process.kill(pid, 0); return; } catch (e) { if (e && e.code === 'EPERM') return; }
+    }
+  } catch { /* pas de lock → on lance */ }
+  try {
+    const wd = spawn(process.execPath, [path.join(__dirname, 'watchdog.js')], { detached: true, stdio: 'ignore' });
+    wd.unref();
+  } catch { /* fail-open */ }
 }
 
 function writeProfile(profile) {
@@ -182,6 +201,7 @@ async function fetchAndLaunch() {
   }
 
   launchDaemon(exe, profile, modelPath);
+  ensureWatchdog();
   log(`daemon lancé (profil ${profile.id}).`);
 
   // Anti-silence : si GPU attendu mais absent du log → AVERTIR (pas un échec).
@@ -220,8 +240,32 @@ async function main() {
   process.exit(0);
 }
 
+// SessionStart : pose le lease de la session + assure le watchdog, PUIS main().
+//   On lit le session_id sur stdin (fourni par Claude Code). Garde-fou : si
+//   'end' ne fire pas, un timer enclenche quand même (fail-open, jamais bloquer).
+function sessionStart() {
+  let raw = '';
+  let started = false;
+  const go = () => {
+    if (started) return;
+    started = true;
+    try { const p = JSON.parse(raw || '{}'); lease.touch(p && p.session_id); } catch { lease.touch('unknown'); }
+    ensureWatchdog();
+    Promise.resolve(main()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
+  };
+  try {
+    process.stdin.on('data', (c) => { raw += c; });
+    process.stdin.on('end', go);
+    process.stdin.on('error', go);
+  } catch { go(); }
+  setTimeout(go, 1500); // garde-fou : stdin muet → on avance quand même
+}
+
 if (require.main === module) {
-  const run = process.argv[2] === '--fetch' ? fetchAndLaunch() : main();
-  Promise.resolve(run).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
+  if (process.argv[2] === '--fetch') {
+    Promise.resolve(fetchAndLaunch()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
+  } else {
+    sessionStart();
+  }
 }
 // Stryker restore all

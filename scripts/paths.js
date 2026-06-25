@@ -31,6 +31,9 @@ const profilePath = () => path.join(dataDir(), 'profile.json');
 const binDir = () => path.join(dataDir(), 'bin');
 const modelsDir = () => path.join(dataDir(), 'models');
 const serverLog = () => path.join(dataDir(), 'server.log');
+// Lifecycle du daemon (lease/watchdog) — cf lease.js + watchdog.js.
+const serverPid = () => path.join(dataDir(), 'server.pid');
+const watchdogLock = () => path.join(dataDir(), 'watchdog.pid');
 
-module.exports = { dataDir, indexPath, healthPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog };
+module.exports = { dataDir, indexPath, healthPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog, serverPid, watchdogLock };
 // Stryker restore all
