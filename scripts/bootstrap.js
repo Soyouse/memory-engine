@@ -241,6 +241,8 @@ async function main() {
 //   La pose de lease (refcount session) et l'arrêt à la dernière fermeture sont
 //   gérés par session-leases.js (--start/--end). main() ne lit pas stdin : on avance.
 if (require.main === module) {
+  // KILL-SWITCH : moteur OFF (fichier sentinelle) → ne lance/ne télécharge rien.
+  if (PATHS.isDisabled()) process.exit(0);
   if (process.argv[2] === '--fetch') {
     Promise.resolve(fetchAndLaunch()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });
   } else {

@@ -15,6 +15,7 @@
 // Stryker disable all
 const path = require('path');
 const os = require('os');
+const fs = require('fs'); // ⚠️ requis par isDisabled() (existsSync du fichier sentinelle).
 
 function dataDir() {
   return process.env.CLAUDE_PLUGIN_DATA
@@ -38,5 +39,13 @@ const leasesDir = () => path.join(dataDir(), 'leases');
 const serverPidPath = () => path.join(dataDir(), 'server.pid');
 const watchdogPidPath = () => path.join(dataDir(), 'watchdog.pid');
 
-module.exports = { dataDir, indexPath, healthPath, incidentsPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog, leasesDir, serverPidPath, watchdogPidPath };
+// ── KILL-SWITCH À CHAUD (fichier sentinelle, relu à CHAQUE exec de hook) ──
+// ⚠️ PAS une env var : Windows fige l'env au lancement de Claude → invisible aux
+//   hooks sans restart. Un FICHIER est relu à chaque process hook = vrai hot.
+//   Présence du fichier `DISABLED` → moteur OFF (chaque entrypoint exit 0 d'emblée :
+//   zéro injection, zéro serveur, zéro indexation). Le supprimer rallume à chaud.
+const disabledFlagPath = () => path.join(dataDir(), 'DISABLED');
+const isDisabled = () => { try { return fs.existsSync(disabledFlagPath()); } catch { return false; } };
+
+module.exports = { dataDir, indexPath, healthPath, incidentsPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog, leasesDir, serverPidPath, watchdogPidPath, disabledFlagPath, isDisabled };
 // Stryker restore all

@@ -190,6 +190,8 @@ function relaunchDaemon() {
 }
 
 if (require.main === module) {
+  // KILL-SWITCH : moteur OFF (fichier sentinelle) → zéro injection, sortie immédiate.
+  if (PATHS.isDisabled()) process.exit(0);
   let raw = '';
   process.stdin.on('data', (c) => { raw += c; });
   process.stdin.on('error', () => process.exit(0));

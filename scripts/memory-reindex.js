@@ -217,6 +217,8 @@ async function reconcile() {
 }
 
 if (require.main === module) {
+  // KILL-SWITCH : moteur OFF (fichier sentinelle) → pas d'indexation.
+  if (PATHS.isDisabled()) process.exit(0);
   const arg = process.argv[2];
   const run = arg === '--reconcile' ? reconcile() : arg ? upsertOne(arg) : full();
   run.catch((e) => { process.stdout.write(`\nErreur reindex : ${e && e.message}\n`); process.exit(0); });

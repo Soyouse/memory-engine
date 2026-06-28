@@ -33,6 +33,8 @@ function isMemoryFile(filePath) {
 }
 
 if (require.main === module) {
+  // KILL-SWITCH : moteur OFF (fichier sentinelle) → pas d'upsert.
+  if (PATHS.isDisabled()) process.exit(0);
   let raw = '';
   process.stdin.on('data', (c) => { raw += c; });
   process.stdin.on('error', () => process.exit(0));

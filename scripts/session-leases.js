@@ -166,6 +166,8 @@ module.exports.ensureWatchdog = ensureWatchdog;
 module.exports.run = run;
 
 if (require.main === module) {
+  // KILL-SWITCH : moteur OFF (fichier sentinelle) → ni lease ni watchdog.
+  if (PATHS.isDisabled()) process.exit(0);
   const mode = process.argv[2];
   let raw = '';
   process.stdin.on('data', (c) => { raw += c; });
