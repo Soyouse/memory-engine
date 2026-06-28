@@ -133,8 +133,17 @@ module.exports = {
 // ── COQUILLE I/O (exclue mutation) ──
 // Stryker disable all
 const { spawn } = require('child_process');
+const INC = require('./incident-log.js');
+const INCIDENTS = PATHS.incidentsPath();
 const EMBED_HOST = process.env.MEM_EMBED_HOST || '127.0.0.1';
 const EMBED_PORT = process.env.MEM_EMBED_PORT || '8181';
+
+// Journalise un incident d'observabilité (down/booting/dim_mismatch/recovered).
+//   fail-open total : ne casse JAMAIS le hook. ts stampé ici (hors noyau pur).
+function logIncident(rec) {
+  try { INC.appendIncident(INCIDENTS, { ...rec, ts: new Date().toISOString() }); }
+  catch { /* un journal ne casse jamais le prompt */ }
+}
 
 function readBody(id) {
   const raw = fs.readFileSync(path.join(MEM_DIR, id + '.md'), 'utf8');
@@ -176,10 +185,18 @@ if (require.main === module) {
       try { fs.mkdirSync(path.dirname(HEALTH), { recursive: true }); fs.writeFileSync(HEALTH, JSON.stringify(rec)); }
       catch { /* ignore */ }
     };
+    // État de santé PRÉCÉDENT (avant écrasement) → log d'incident PAR TRANSITION
+    //   (anti-spam SSD) : on n'écrit que si l'état change vs le prompt d'avant.
+    let prevOk = null, prevStatus = null;
+    try {
+      const h = JSON.parse(fs.readFileSync(HEALTH, 'utf8'));
+      prevOk = h.ok; prevStatus = h.status || (h.ok ? 'ok' : 'down');
+    } catch { /* pas encore de santé */ }
+    let sessionId = 'unknown';
     try {
       const payload = JSON.parse(raw || '{}');
       const prompt = typeof payload.prompt === 'string' ? payload.prompt.trim() : '';
-      const sessionId = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : 'unknown';
+      sessionId = typeof payload.session_id === 'string' && payload.session_id ? payload.session_id : 'unknown';
       if (!prompt) { process.exit(0); }
 
       const idx = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
@@ -194,11 +211,18 @@ if (require.main === module) {
       // GARDE ANTI-SWAP : index et serveur doivent parler le même modèle (dim).
       // Mismatch → scores = bruit → DOWN explicite plutôt que recall mensonger.
       if (dimMismatch(qv, idx)) {
-        writeHealth(healthRecord(false, latency, idx.model, new Date().toISOString(),
-          `dim mismatch: index=${idx.dim} requête=${qv.length} (modèle serveur ≠ index → reindex requis)`));
+        const msg = `dim mismatch: index=${idx.dim} requête=${qv.length} (modèle serveur ≠ index → reindex requis)`;
+        writeHealth(healthRecord(false, latency, idx.model, new Date().toISOString(), msg));
+        if (INC.shouldLogTransition(prevStatus, 'down')) {
+          logIncident({ kind: 'dim_mismatch', status: 'down', latencyMs: latency, error: msg, session: sessionId });
+        }
         process.exit(0);
       }
       writeHealth(healthRecord(true, latency, idx.model, new Date().toISOString(), null));
+      // Retour à ok après un incident → clôt l'incident dans le journal.
+      if (INC.recoveryKind(prevOk, true)) {
+        logIncident({ kind: 'recovered', status: 'ok', latencyMs: latency, session: sessionId });
+      }
 
       const hits = searchDedup(qv, idx.items, K, MIN_SCORE);
       const { toInject, toRecall } = partitionByTier(hits, state);
@@ -229,9 +253,15 @@ if (require.main === module) {
       //   'down' (injoignable) → relance le daemon (réveil après idle-kill).
       let probe = 'down';
       try { probe = await probeServer(); } catch { /* down */ }
-      if (probe === 'down') relaunchDaemon();
+      const relaunched = probe === 'down';
+      if (relaunched) relaunchDaemon();
       const status = statusFrom(false, probe);
       writeHealth(healthRecord(false, null, null, new Date().toISOString(), e && e.message, status));
+      // Trace l'incident SEULEMENT sur transition (anti-spam) : distingue reload
+      //   (booting) d'un vrai crash (down+relance). down persistant = 1 ligne.
+      if (INC.shouldLogTransition(prevStatus, status)) {
+        logIncident({ kind: status, status, probe, relaunched, error: e && e.message, session: sessionId });
+      }
     }
     process.exit(0);
   });
