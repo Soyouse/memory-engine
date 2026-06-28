@@ -155,7 +155,10 @@ async function embedMemory(id) {
   const out = [];
   for (const c of chunksOf(parsed)) {
     const vector = await embedText(c.text, { kind: 'document', timeoutMs: 15000 });
-    out.push({ id, chunk: c.chunk, tier: parsed.tier, description: parsed.description, vector });
+    // `text` (corps complet du chunk) stocké pour la récupération LEXICALE BM25
+    //   (memory-bm25.js) — le cosine seul rate le mot exact. +~0.3 Mo sur 46 Mo
+    //   (négligeable, borné par le nb de mémoires). Absent = BM25 dégrade en cosine seul.
+    out.push({ id, chunk: c.chunk, tier: parsed.tier, description: parsed.description, text: c.text, vector });
   }
   return out;
 }

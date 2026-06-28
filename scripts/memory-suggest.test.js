@@ -116,7 +116,12 @@ test('statusFrom — embed ko + injoignable/inconnu → down', () => {
 // ── healthRecord (pur) ──
 test('healthRecord — ok complet', () => {
   assert.deepStrictEqual(S.healthRecord(true, 182.6, 'gemma', 'T', null),
-    { ok: true, status: 'ok', latencyMs: 183, model: 'gemma', ts: 'T', error: null });
+    { ok: true, status: 'ok', latencyMs: 183, model: 'gemma', ts: 'T', error: null, bm25: null });
+});
+test('healthRecord — flag bm25 (on/degraded) porté', () => {
+  assert.strictEqual(S.healthRecord(true, 5, 'm', 'T', null, undefined, 'on').bm25, 'on');
+  assert.strictEqual(S.healthRecord(true, 5, 'm', 'T', null, undefined, 'degraded').bm25, 'degraded');
+  assert.strictEqual(S.healthRecord(true, 5, 'm', 'T').bm25, null); // absent → null
 });
 test('healthRecord — status explicite (booting) override le défaut', () => {
   const r = S.healthRecord(false, null, 'm', 'T', null, 'booting');

@@ -114,7 +114,9 @@ function statusFrom(embedOk, probe) {
 
 // Enregistrement de santé (lu par la statusline). `status` optionnel : sinon
 //   dérivé de `ok` (rétro-compat). `ok` reste booléen (lecteurs historiques).
-function healthRecord(ok, latencyMs, model, isoNow, error, status) {
+//   `bm25` optionnel : 'on' (corpus lexical complet) / 'degraded' (index sans
+//   `text` → recall lexical partiel, reindex requis) / null (non applicable).
+function healthRecord(ok, latencyMs, model, isoNow, error, status, bm25) {
   return {
     ok: !!ok,
     status: status || (ok ? 'ok' : 'down'),
@@ -122,6 +124,7 @@ function healthRecord(ok, latencyMs, model, isoNow, error, status) {
     model: model || null,
     ts: isoNow,
     error: error ? String(error).slice(0, 200) : null,
+    bm25: bm25 || null,
   };
 }
 
@@ -134,9 +137,19 @@ module.exports = {
 // Stryker disable all
 const { spawn } = require('child_process');
 const INC = require('./incident-log.js');
+const BM25 = require('./memory-bm25.js');
 const INCIDENTS = PATHS.incidentsPath();
 const EMBED_HOST = process.env.MEM_EMBED_HOST || '127.0.0.1';
 const EMBED_PORT = process.env.MEM_EMBED_PORT || '8181';
+// Fusion HYBRIDE (cosine + BM25 lexical) — config déclarative, COUPLÉE à MIN_SCORE.
+//   2 régimes (cf hybridSearch) : sémantique fort → réordonnancement RRF ; sémantique
+//   vide → récupération lexicale gatée par idf (token discriminant).
+const CAND_MAX = 50;       // candidats par voie (cosine / BM25) avant fusion.
+const CAND_FLOOR = 0.45;   // seuil cosine LARGE (liste pour les rangs RRF, sous MIN_SCORE).
+// idf min d'un token pour légitimer une récupération lexicale (régime sémantique vide).
+//   COUPLÉ à N (nb chunks) : idf=4.0 ⇔ token dans ≲16 chunks/888 = nom propre/terme rare.
+//   Recalibrer si le corpus change fortement d'ordre de grandeur.
+const IDF_STRONG = 4.0;
 
 // Journalise un incident d'observabilité (down/booting/dim_mismatch/recovered).
 //   fail-open total : ne casse JAMAIS le hook. ts stampé ici (hors noyau pur).
@@ -187,10 +200,10 @@ if (require.main === module) {
     };
     // État de santé PRÉCÉDENT (avant écrasement) → log d'incident PAR TRANSITION
     //   (anti-spam SSD) : on n'écrit que si l'état change vs le prompt d'avant.
-    let prevOk = null, prevStatus = null;
+    let prevOk = null, prevStatus = null, prevBm25 = null;
     try {
       const h = JSON.parse(fs.readFileSync(HEALTH, 'utf8'));
-      prevOk = h.ok; prevStatus = h.status || (h.ok ? 'ok' : 'down');
+      prevOk = h.ok; prevStatus = h.status || (h.ok ? 'ok' : 'down'); prevBm25 = h.bm25 || null;
     } catch { /* pas encore de santé */ }
     let sessionId = 'unknown';
     try {
@@ -218,13 +231,28 @@ if (require.main === module) {
         }
         process.exit(0);
       }
-      writeHealth(healthRecord(true, latency, idx.model, new Date().toISOString(), null));
+      // BM25 actif = l'index porte le champ `text` (corps). Absent → recall
+      //   lexical partiel (id/titre/desc seuls) → signaler 'degraded' (reindex requis).
+      const bm25Flag = idx.items.some((it) => it && it.text) ? 'on' : 'degraded';
+      writeHealth(healthRecord(true, latency, idx.model, new Date().toISOString(), null, undefined, bm25Flag));
       // Retour à ok après un incident → clôt l'incident dans le journal.
       if (INC.recoveryKind(prevOk, true)) {
         logIncident({ kind: 'recovered', status: 'ok', latencyMs: latency, session: sessionId });
       }
+      // Lexical dégradé (index sans `text`) → 1 ligne au PASSAGE en dégradé (anti-spam).
+      if (bm25Flag === 'degraded' && INC.shouldLogTransition(prevBm25, bm25Flag)) {
+        logIncident({ kind: 'bm25_degraded', status: 'ok', error: 'index sans champ text — reindex requis (recall lexical partiel)', session: sessionId });
+      }
 
-      const hits = searchDedup(qv, idx.items, K, MIN_SCORE);
+      // RÉCUPÉRATION HYBRIDE : sémantique (cosine, large) + lexicale (BM25), fusion RRF.
+      //   Le cosine seul « rate mollement » le mot exact (noms propres, ids) ; BM25
+      //   le rattrape. Gate dans hybridSearch (préserve « rien si rien ne matche »).
+      const corpus = BM25.buildCorpus(idx.items);
+      const cosHits = searchDedup(qv, idx.items, CAND_MAX, CAND_FLOOR);
+      const bm25Hits = BM25.bm25Search(prompt, corpus, CAND_MAX);
+      const hits = BM25.hybridSearch(cosHits, bm25Hits, {
+        minScore: MIN_SCORE, idfStrong: IDF_STRONG, regime2Floor: CAND_FLOOR, k: K, rrfK: BM25.RRF_K,
+      });
       const { toInject, toRecall } = partitionByTier(hits, state);
 
       // Lire les corps des tier-0 à injecter + marquer injectés.
