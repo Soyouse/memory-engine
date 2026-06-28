@@ -88,6 +88,20 @@ function formatInjected(items) {
     + blocks.join('\n\n') + '\n</memory-inject>';
 }
 
+// Résumé USER-ONLY (systemMessage) : transparence des mémoires de ce tour.
+//   MESURÉ 2026-06-28 : systemMessage s'affiche chez l'utilisateur SANS entrer
+//   dans le contexte du modèle (≠ additionalContext) → zéro pollution agent.
+//   🧠 injecté = tier-0 corps entré ce tour · 💡 rappel = tier-1 + tier-0 déjà vus (⁰).
+//   '' si rien (pas de systemMessage émis).
+function formatSystemMessage(injected, toRecall) {
+  const inj = (Array.isArray(injected) ? injected : []).filter(Boolean);
+  const rec = (Array.isArray(toRecall) ? toRecall : []).filter(Boolean);
+  const segs = [];
+  if (inj.length) segs.push('🧠 injecté: ' + inj.map((it) => it.id).join(', '));
+  if (rec.length) segs.push('💡 rappel: ' + rec.map((h) => h.id + (h.tier === 0 ? '⁰' : '')).join(', '));
+  return segs.join('  ·  ');
+}
+
 // Statut TRI-ÉTAT (lu par la statusline) à partir du résultat d'embed + sonde
 //   /health du serveur : embed OK → 'ok' ; serveur joignable mais modèle en
 //   cours de chargement (HTTP 503) → 'booting' ; injoignable → 'down'.
@@ -112,7 +126,7 @@ function healthRecord(ok, latencyMs, model, isoNow, error, status) {
 }
 
 module.exports = {
-  partitionByTier, formatRecall, formatInjected, healthRecord, statusFrom,
+  partitionByTier, formatRecall, formatInjected, formatSystemMessage, healthRecord, statusFrom,
   K, RECALL_MAX, MIN_SCORE, INJECT_MAX_CHARS,
 };
 
@@ -202,7 +216,13 @@ if (require.main === module) {
       }
 
       const out = [formatInjected(injected), formatRecall(toRecall)].filter(Boolean).join('\n');
-      if (out) process.stdout.write(out + '\n');
+      if (out) {
+        // additionalContext = injection (modèle) ; systemMessage = transparence (user-only).
+        const payload = { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: out } };
+        const sys = formatSystemMessage(injected, toRecall);
+        if (sys) payload.systemMessage = sys;
+        process.stdout.write(JSON.stringify(payload));
+      }
     } catch (e) {
       // Embed a échoué : sonde le serveur pour distinguer démarrage vs panne.
       //   'booting' (modèle en cours) → statusline « démarrage », pas « DOWN ».

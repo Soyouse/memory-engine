@@ -8,6 +8,20 @@ const path = require('path');
 const S = require('./memory-suggest.js');
 const STATE = require('./memory-state.js');
 
+// ── formatSystemMessage (pur) — transparence user-only ──
+test('formatSystemMessage — injecté + rappel, ⁰ marque le tier-0', () => {
+  const msg = S.formatSystemMessage([{ id: 'a' }], [{ id: 'b', tier: 1 }, { id: 'c', tier: 0 }]);
+  assert.match(msg, /🧠 injecté: a/);
+  assert.match(msg, /💡 rappel: b, c⁰/);
+});
+test('formatSystemMessage — rien à montrer → chaîne vide', () => {
+  assert.strictEqual(S.formatSystemMessage([], []), '');
+  assert.strictEqual(S.formatSystemMessage(null, undefined), '');
+});
+test('formatSystemMessage — injecté seul (pas de rappel)', () => {
+  assert.strictEqual(S.formatSystemMessage([{ id: 'x' }], []), '🧠 injecté: x');
+});
+
 // ── partitionByTier (pur) — LE cœur du modèle ──
 test('partitionByTier — tier-0 1er match → à injecter', () => {
   const { toInject, toRecall } = S.partitionByTier([{ id: 'a', tier: 0 }], STATE.initialState());
