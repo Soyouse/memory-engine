@@ -32,13 +32,14 @@ const GH_LATEST = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/late
 
 // ── NOYAU PUR (mutable Stryker) ──
 
-// Secondes d'inactivité avant que llama.cpp décharge le modèle (GPU rendu au
-//   gaming). Défaut 1200 (20 min) ; override `MEMORY_ENGINE_IDLE_SECONDS` ; 0 =
-//   jamais (serveur toujours chaud). ⚠️ PUR + testé : garde anti-régression — si
-//   le défaut tombait à 0, le serveur tiendrait le GPU H24 (le bug qu'on a tué).
+// Secondes d'inactivité avant que llama.cpp décharge le modèle. ⚠️ DÉFAUT = 0
+//   (jamais dormir, serveur CHAUD) : le cycle de vie est piloté par les SESSIONS
+//   (session-leases.js), PAS par ce timer aveugle. Le timer dormait EN session
+//   active sans embed → faux-DOWN (cf [[project_memory_false_down_reload]]). Reste
+//   un opt-in `MEMORY_ENGINE_IDLE_SECONDS` (> 0) pour qui n'a pas le hook SessionEnd.
 function idleSeconds(env) {
   const n = Number((env || {}).MEMORY_ENGINE_IDLE_SECONDS);
-  return Number.isFinite(n) && n >= 0 ? n : 1200;
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 // Choix du profil. userGpu explicite (true/false) gagne ; sinon auto = GPU
@@ -67,10 +68,9 @@ function pickAsset(assets, platform, arch, useGpu) {
 }
 
 // Flags de lancement du serveur (pooling COUPLÉ au profil : Qwen3=last).
-//   --sleep-idle-seconds : NATIF llama.cpp. Le serveur décharge le modèle de la
-//   VRAM après N s sans requête (GPU rendu au gaming) et le RECHARGE seul à la
-//   requête suivante. Remplace tout lifecycle custom (lease/watchdog/SessionEnd) :
-//   chaque embedding = signal d'activité, le serveur tient son propre timer idle.
+//   --sleep-idle-seconds n'est ajouté QUE si idleSeconds > 0 (opt-in). Par défaut
+//   ABSENT : le serveur reste chaud et son arrêt est piloté par session-leases.js
+//   (SessionEnd de la dernière session) — event-driven, jamais un timer aveugle.
 function serverArgs(profile, modelPath, host, port, idleSeconds) {
   const a = ['-m', modelPath, '--embeddings', '-ngl', String(profile.ngl),
     '--host', String(host), '--port', String(port),
@@ -151,6 +151,9 @@ function launchDaemon(exe, profile, modelPath) {
   const args = serverArgs(profile, modelPath, HOST, PORT, idleSeconds(process.env));
   const out = fs.openSync(PATHS.serverLog(), 'a');
   const child = spawn(exe, args, { detached: true, stdio: ['ignore', out, out] });
+  // PID écrit pour que session-leases.js puisse ARRÊTER le serveur à la fermeture
+  //   de la dernière session (cycle de vie event-driven, rend la VRAM).
+  try { fs.writeFileSync(PATHS.serverPidPath(), String(child.pid)); } catch { /* fail-open */ }
   child.unref();
 }
 
@@ -234,9 +237,9 @@ async function main() {
   process.exit(0);
 }
 
-// SessionStart : lance le daemon s'il est down (idempotent). Le serveur gère
-//   lui-même son cycle de vie GPU (--sleep-idle-seconds) → aucun lease ni
-//   watchdog à poser. main() ne lit pas stdin : on n'attend rien, on avance.
+// SessionStart : lance le daemon s'il est down (idempotent), CHAUD (pas de sleep).
+//   La pose de lease (refcount session) et l'arrêt à la dernière fermeture sont
+//   gérés par session-leases.js (--start/--end). main() ne lit pas stdin : on avance.
 if (require.main === module) {
   if (process.argv[2] === '--fetch') {
     Promise.resolve(fetchAndLaunch()).catch((e) => { log(`bootstrap: ${e && e.message}`); process.exit(0); });

@@ -32,6 +32,11 @@ const profilePath = () => path.join(dataDir(), 'profile.json');
 const binDir = () => path.join(dataDir(), 'bin');
 const modelsDir = () => path.join(dataDir(), 'models');
 const serverLog = () => path.join(dataDir(), 'server.log');
+// Cycle de vie EVENT-DRIVEN du serveur : 1 lease/session Claude (leasesDir),
+//   PID du daemon (serverPid) pour l'arrêt quand la dernière session se ferme.
+const leasesDir = () => path.join(dataDir(), 'leases');
+const serverPidPath = () => path.join(dataDir(), 'server.pid');
+const watchdogPidPath = () => path.join(dataDir(), 'watchdog.pid');
 
-module.exports = { dataDir, indexPath, healthPath, incidentsPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog };
+module.exports = { dataDir, indexPath, healthPath, incidentsPath, stateDir, memoryDir, profilePath, binDir, modelsDir, serverLog, leasesDir, serverPidPath, watchdogPidPath };
 // Stryker restore all

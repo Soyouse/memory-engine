@@ -76,23 +76,24 @@ test('serverArgs : idleSeconds absent/0 = PAS de flag sleep (serveur toujours ch
   assert.ok(!serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', 0).includes('--sleep-idle-seconds'));
 });
 
-test('idleSeconds : défaut = 1200 (env absent/vide/invalide)', () => {
-  assert.equal(idleSeconds({}), 1200);
-  assert.equal(idleSeconds(undefined), 1200);
-  assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: 'xx' }), 1200);
+test('idleSeconds : défaut = 0 (cycle de vie géré par les sessions, pas par timer)', () => {
+  assert.equal(idleSeconds({}), 0);
+  assert.equal(idleSeconds(undefined), 0);
+  assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: 'xx' }), 0);
 });
 
-test('idleSeconds : override env respecté ; 0 = jamais', () => {
+test('idleSeconds : override env respecté (opt-in sleep) ; 0 = jamais', () => {
   assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: '300' }), 300);
   assert.equal(idleSeconds({ MEMORY_ENGINE_IDLE_SECONDS: '0' }), 0);
 });
 
-// ⚠️ GARDE ANTI-RÉGRESSION CLÉ : le défaut DOIT produire le flag --sleep-idle-seconds.
-//   Sinon le serveur tiendrait le GPU H24 (le bug qu'on a éliminé). Couvre le
-//   câblage défaut → flag (le maillon launchDaemon est cette même composition).
-test('REGRESSION : défaut idleSeconds → serveur lancé AVEC --sleep-idle-seconds', () => {
+// ⚠️ GARDE ANTI-RÉGRESSION CLÉ (inversée 2026-06-28) : le défaut NE DOIT PAS produire
+//   --sleep-idle-seconds. Le timer aveugle causait des faux-DOWN (sleep EN session
+//   active sans embed). Le serveur reste chaud ; son arrêt = session-leases au
+//   SessionEnd de la DERNIÈRE session. Réintroduire le défaut sleep = ressusciter le bug.
+test('REGRESSION : défaut idleSeconds → serveur lancé SANS --sleep-idle-seconds', () => {
   const a = serverArgs(PROFILES.gpu, '/m.gguf', '127.0.0.1', '8181', idleSeconds({}));
-  assert.equal(a[a.indexOf('--sleep-idle-seconds') + 1], '1200');
+  assert.ok(!a.includes('--sleep-idle-seconds'));
 });
 
 test('serverExeName : .exe sur Windows seulement', () => {
