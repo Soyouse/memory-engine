@@ -15,7 +15,9 @@
       "incident-log.test.js",
       "memory-bm25.test.js",
       "session-leases.test.js",
-      "proc-tree.test.js"
+      "proc-tree.test.js",
+      "mem-health-label.test.js",
+      "memory-toggle.test.js"
     ]
   },
   "coverageAnalysis": "off",
@@ -34,7 +36,9 @@
     "incident-log.js",
     "memory-bm25.js",
     "session-leases.js",
-    "proc-tree.js"
+    "proc-tree.js",
+    "mem-health-label.js",
+    "memory-toggle.js"
   ],
   "incremental": true,
   "_cliquet": "break monte jamais descend (doctrine Théo). Score 2026-06-20 = 89.25% (6 noyaux purs : state 95.65, probe 100, suggest 100, bump 87.88, embed 86.73, inject 85.29). Fixé 88 (marge ~1pt). Config déclarative (chemins/URL/préfixes) exclue via // Stryker disable.",
