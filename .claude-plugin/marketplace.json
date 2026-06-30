@@ -6,7 +6,7 @@
       "name": "memory-engine",
       "source": "./",
       "description": "Mémoire long terme sémantique 100% locale pour Claude Code — recall compaction-aware, embeddings llama.cpp GPU/CPU, aucun cloud.",
-      "version": "0.2.1"
+      "version": "0.3.0"
     }
   ]
 }
